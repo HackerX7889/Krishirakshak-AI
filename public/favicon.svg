@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect width="48" height="48" rx="12" fill="#287f3e"/>
+  <!-- leaf -->
+  <path d="M25 37C13 37 5 29 7 11c18-2 29 4 32 9-droplets 3-28-17-33-5-12-3-12z" fill="#ffffff"/>
+  <!-- smartphone -->
+  <rect x="18" y="13" width="12" height="8" rx="2" fill="#16283a"/>
+  <rect x="21" y="15" width="6" height="4" rx="1" fill="#f6c755"/>
+  <!-- scan ray -->
+  <line x1="17" y1="22" x2="31" y2="22" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</svg>
