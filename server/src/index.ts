@@ -3,7 +3,9 @@ import type { NextFunction, Request, Response } from "express"
 import { env } from "./env.js"
 import { ApiError } from "./errors.js"
 import { seedDatabaseIfEmpty } from "./seed.js"
+import { isAiConfigured } from "./services/ai.js"
 import { authRouter } from "./routes/auth.js"
+import { aiRouter } from "./routes/ai.js"
 import { farmRouter } from "./routes/farm.js"
 import { apiRouter } from "./routes/api.js"
 import { weatherRouter } from "./routes/weather.js"
@@ -11,7 +13,7 @@ import { reportsRouter } from "./routes/reports.js"
 
 const app = express()
 app.disable("x-powered-by")
-app.use(express.json({ limit: "5mb" }))
+app.use(express.json({ limit: "8mb" })) // leaf photos arrive as base64
 
 // CORS — open for the prototype (frontend runs on a different port).
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -30,6 +32,7 @@ app.get("/api/health", (_req, res) => {
 })
 
 app.use("/api/auth", authRouter)
+app.use("/api/ai", aiRouter)
 app.use("/api/farm", farmRouter)
 app.use("/api/weather", weatherRouter)
 app.use("/api/reports", reportsRouter)
@@ -58,4 +61,9 @@ const seeded = seedDatabaseIfEmpty()
 app.listen(env.port, () => {
   console.log(`[smart-farming-ai-server] listening on http://localhost:${env.port}`)
   console.log(seeded ? "  seeded database with demo data (demo user: 9876543210 / demo1234)" : "  database already initialised")
+  console.log(
+    isAiConfigured()
+      ? `  crop AI enabled: ${env.aiModel} via ${env.aiBaseUrl}`
+      : "  crop AI disabled (set AI_API_KEY in server/.env to enable real analysis)",
+  )
 })

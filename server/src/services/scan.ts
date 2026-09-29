@@ -14,6 +14,9 @@ export interface ScanResult {
   treatment: string
   prevention: string[]
   scannedAt: string
+  fertilizer?: string
+  severity?: string
+  advice?: string
 }
 
 const samples: ScanResult[] = [

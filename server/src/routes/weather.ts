@@ -1,5 +1,6 @@
 import { Router } from "express"
 import type { RequestHandler } from "express"
+import { asyncHandler } from "../asyncHandler.js"
 import { requireAuth } from "../middleware/auth.js"
 import { currentWeather, weatherAlerts, weatherForecast } from "../services/weather.js"
 import { optionalNumber } from "../validate.js"
@@ -13,20 +14,20 @@ function coords(req: { query: Record<string, unknown> }): { lat: number; lon: nu
   return { lat: Number.isNaN(lat) ? undefined : lat, lon: Number.isNaN(lon) ? undefined : lon } as { lat: number; lon: number }
 }
 
-const current: RequestHandler = async (req, res) => {
+const current: RequestHandler = asyncHandler(async (req, res) => {
   const c = coords(req)
   res.json({ weather: await currentWeather(c.lat, c.lon) })
-}
+})
 
-const forecast: RequestHandler = async (req, res) => {
+const forecast: RequestHandler = asyncHandler(async (req, res) => {
   const c = coords(req)
   res.json({ forecast: await weatherForecast(c.lat, c.lon) })
-}
+})
 
-const alerts: RequestHandler = async (req, res) => {
+const alerts: RequestHandler = asyncHandler(async (req, res) => {
   const c = coords(req)
   res.json({ alerts: await weatherAlerts(c.lat, c.lon) })
-}
+})
 
 weatherRouter.get("/current", current)
 weatherRouter.get("/forecast", forecast)

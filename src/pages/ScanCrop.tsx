@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react"
+﻿import { useEffect, useMemo, useState } from "react"
 import {
   Camera,
   ScanLine,
@@ -9,9 +9,13 @@ import {
   Image as ImageIcon,
   Stethoscope,
   Sparkles,
+  Cpu,
 } from "lucide-react"
 import { useLanguage } from "../contexts/LanguageContext"
+import { useAuth } from "../contexts/AuthContext"
 import { useToast } from "../contexts/ToastContext"
+import { analyzeCrop, fetchAiStatus } from "../services/diseaseApi"
+import type { AnalysisSource } from "../services/diseaseApi"
 import { diseaseSamples } from "../data/mockData"
 import type { DiseaseResult } from "../types"
 import PageHeader from "../components/PageHeader"
@@ -24,43 +28,62 @@ import Spinner from "../components/Spinner"
 import DetectionFlowChart from "../components/DetectionFlowChart"
 
 type Phase = "idle" | "analyzing" | "done"
+type RichResult = DiseaseResult & { severity?: string; advice?: string }
 
 export default function ScanCrop() {
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+  const { user } = useAuth()
   const { show } = useToast()
   const [image, setImage] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>("idle")
-  const [result, setResult] = useState<DiseaseResult | null>(null)
-  const [activeSample, setActiveSample] = useState<keyof typeof diseaseSamples | null>(null)
+  const [result, setResult] = useState<RichResult | null>(null)
+  const [source, setSource] = useState<AnalysisSource | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [aiModel, setAiModel] = useState<string | null>(null)
 
+  useEffect(() => {
+    let alive = true
+    fetchAiStatus().then((s) => {
+      if (alive) setAiModel(s.configured ? s.model : null)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
-  const analyze = (sample?: keyof typeof diseaseSamples) => {
+  const analyze = async (sample?: keyof typeof diseaseSamples) => {
     setPhase("analyzing")
-    // Mock 2.4s AI analysis delay — replace with real inference API later.
-    window.setTimeout(() => {
-      const r =
-        sample && diseaseSamples[sample]
-          ? diseaseSamples[sample]
-          : activeSample && diseaseSamples[activeSample]
-            ? diseaseSamples[activeSample]
-            : diseaseSamples.sample2
-      setResult(r)
-      setPhase("done")
+    setNotice(null)
+
+    const outcome = await analyzeCrop({
+      imageDataUrl: sample ? undefined : (image ?? undefined),
+      sample,
+      crop: user?.cropType,
+      lang,
+      location: [user?.farmName, user?.location].filter(Boolean).join(", ") || undefined,
+    })
+
+    setResult(outcome.result)
+    setSource(outcome.source)
+    setNotice(outcome.notice ?? null)
+    setPhase("done")
+    if (outcome.source === "ai") {
       show(t("toast.analysisDone"), "success")
-    }, 2400)
+    } else {
+      show(outcome.notice ?? t("scan.aiFallback"), "info")
+    }
   }
 
   const runSample = (key: keyof typeof diseaseSamples) => {
-    setActiveSample(key)
     setImage(null)
-    analyze(key)
+    void analyze(key)
   }
 
   const canAnalyze = image !== null && phase !== "analyzing"
 
   const resultCard = useMemo(
-    () => (result ? <ResultCard result={result} /> : null),
-    [result],
+    () => (result ? <ResultCard result={result} source={source} model={aiModel} /> : null),
+    [result, source, aiModel],
   )
 
   return (
@@ -95,12 +118,17 @@ export default function ScanCrop() {
                 className="mt-4"
                 loading={phase === "analyzing"}
                 disabled={!canAnalyze}
-                onClick={() => analyze()}
+                onClick={() => void analyze()}
               >
                 <ScanLine className="h-5 w-5" aria-hidden /> {phase === "analyzing" ? t("common.analyzing") : t("scan.analyze")}
               </Button>
             )}
             {phase === "analyzing" && <p className="mt-3 text-center text-sm text-navy-500">{t("scan.analyzingNote")}</p>}
+
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-navy-400">
+              <Cpu className="h-3.5 w-3.5" aria-hidden />
+              {aiModel ? `${t("scan.aiModel")}: ${aiModel}` : t("scan.aiNotConfigured")}
+            </p>
           </div>
 
           {/* Sample results */}
@@ -141,6 +169,14 @@ export default function ScanCrop() {
               hint={t("scan.noPhotoHint")}
               icon={<Camera className="h-7 w-7" aria-hidden />}
             />
+          )}
+
+          {phase === "done" && notice && (
+            <div className="mb-4">
+              <Alert kind="info" title={t("scan.aiFallback")} icon={<Cpu className="h-5 w-5 shrink-0 text-navy-500" aria-hidden />}>
+                <p>{notice}</p>
+              </Alert>
+            </div>
           )}
 
           {phase === "done" && resultCard}
@@ -185,7 +221,15 @@ function SampleButton({
   )
 }
 
-function ResultCard({ result }: { result: DiseaseResult }) {
+function ResultCard({
+  result,
+  source,
+  model,
+}: {
+  result: RichResult
+  source: AnalysisSource | null
+  model: string | null
+}) {
   const { t } = useLanguage()
   const healthy = result.status === "healthy"
   const accent = healthy ? "leaf" : result.status === "warning" ? "sun" : "red"
@@ -208,6 +252,9 @@ function ResultCard({ result }: { result: DiseaseResult }) {
     },
   }[accent]
 
+  const fromAi = source === "ai"
+  const severity = (result.severity ?? "").toLowerCase()
+
   return (
     <div className={`overflow-hidden rounded-3xl border-2 ${colorMap.card} shadow-lg`}>
       <div className={`${colorMap.header} px-5 py-4 text-white`}>
@@ -216,10 +263,21 @@ function ResultCard({ result }: { result: DiseaseResult }) {
             {healthy ? <Leaf className="h-5 w-5" aria-hidden /> : <AlertTriangle className="h-5 w-5" aria-hidden />}
             {t("scan.resultTitle")}
           </h2>
-          <Badge tone={healthy ? "green" : "red"} className="border-white/30 bg-white/20 text-white">
-            {healthy ? t("common.healthy") : t("common.diseased")}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {severity && !healthy && (
+              <span className="rounded-full border border-white/30 bg-white/20 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide">
+                {t(`scan.severity.${severity}`)}
+              </span>
+            )}
+            <Badge tone={healthy ? "green" : "red"} className="border-white/30 bg-white/20 text-white">
+              {healthy ? t("common.healthy") : t("common.diseased")}
+            </Badge>
+          </div>
         </div>
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-white/80">
+          <Cpu className="h-3.5 w-3.5" aria-hidden />
+          {fromAi ? `${t("scan.sourceAi")}${model ? ` — ${model}` : ""}` : t("scan.sourceMock")}
+        </p>
       </div>
 
       <div className="space-y-5 p-5 sm:p-6">
@@ -242,6 +300,15 @@ function ResultCard({ result }: { result: DiseaseResult }) {
           <InfoBox label={t("scan.disease")} value={result.diseaseName} />
         </div>
 
+        {result.advice && (
+          <div className="rounded-2xl border border-navy-200 bg-white p-4 text-sm text-navy-800">
+            <p className="mb-1 flex items-center gap-2 font-bold">
+              <Sparkles className="h-4 w-4" aria-hidden /> {t("scan.advice")}
+            </p>
+            <p>{result.advice}</p>
+          </div>
+        )}
+
         <div className={`rounded-2xl border p-4 ${colorMap.chip}`}>
           <p className="mb-2 flex items-center gap-2 text-sm font-bold">
             <HeartPulse className="h-4 w-4" aria-hidden /> {t("scan.symptoms")}
@@ -257,6 +324,13 @@ function ResultCard({ result }: { result: DiseaseResult }) {
           <p className="mb-2 text-sm font-bold text-navy-900">💊 {t("scan.treatment")}</p>
           <p className="text-sm text-navy-700">{result.treatment}</p>
         </div>
+
+        {result.fertilizer && (
+          <div className="rounded-2xl border border-sun-200 bg-sun-50 p-4">
+            <p className="mb-2 text-sm font-bold text-sun-800">🌱 {t("scan.fertilizer")}</p>
+            <p className="text-sm text-sun-900">{result.fertilizer}</p>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-leaf-200 bg-leaf-50 p-4">
           <p className="mb-2 text-sm font-bold text-leaf-800">🛡️ {t("scan.prevention")}</p>
