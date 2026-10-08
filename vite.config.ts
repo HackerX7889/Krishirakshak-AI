@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 const API_TARGET = process.env.API_TARGET ?? 'http://localhost:4000'
 
 export default defineConfig({
+  base: '/Krishirakshak-AI/',
   plugins: [react(), tailwindcss()],
   server: {
     allowedHosts: ['.loca.lt', '.trycloudflare.com'],
